@@ -1,0 +1,165 @@
+---
+title: "Zoe Lab 3"
+author: "Zoe Zilz"
+date: "January 24, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###0. Load Required Packages
+```{r}
+library(tidyverse)
+library(boot)
+library(simputation) #linear imputation
+library(naniar) #visualizing missing data for initial exploration
+```
+
+###A. Bootstrapping Penguin flipper lengths
+
+1. Get penguin data
+```{r}
+penguins <- read_csv("penguins.csv")
+
+# interested in flipper lengths for male penguins
+
+male_p <- penguins %>% 
+  filter(sex == "MALE")
+
+# end up with relatively small sample size (n = 22)
+
+# can I use central limit theorem?
+# LOOK AT IT
+
+ggplot(male_p, aes(x = flipper_length))+
+  geom_histogram(bins = 10)+
+  theme_light()
+
+# normal? Looks like no.
+
+flippers <- male_p %>% 
+  pull(flipper_length)
+
+```
+### Create a function and do some bootstrapping
+
+```{r}
+
+# take 22 obvs with replacement, will be one bootstrap sample
+# then calculate the mean
+# do this some number of times
+# first thing we need to do is make a function to calc the means
+
+mean_fun <- function(x, i) {mean(x[i])}
+
+  #argument x, index i
+  #usually you have the differenct arguments in your function
+  # argument x is the actual smape, and psuedo argument i, which is the bootstrap sample number
+  # i is a sequence operator?
+
+set.seed(10)
+#scenario for 10 interations, fixs the below randomness/reproduciblity issue
+# put this ahead of boot every time?? I DONT UNDERSTAND THIS
+
+boot_10 <- boot(flippers, mean_fun, R = 10)
+  #tehre is no point in doing ten samples, but this is for fun
+  #give it data, function, and repetition #
+
+boot_10
+#tells me i'm doing bootstrapping, mean of og sample, diff between mean of means, and gives me standard error
+# problematic because it's random and not reproducible
+
+set.seed(10)
+boot(flippers, mean_fun, R = 10)
+
+# turns out if you do this, EVERYONE gets the same value.. allison will figure this out
+
+boot_10$t0
+# mean of sample
+boot_10$t
+# mean of all of your samples
+
+# ok ,what happens if we set it to 100
+
+boot_100<-boot(flippers, mean_fun, R = 100)
+
+# we want to figure out waht the samplling dist looks like from means from out different samples
+
+ggplot()+
+  aes(boot_100$t)+
+  geom_histogram()
+
+# shuld get closer and closer to normality
+
+boot_10k <- boot(flippers, mean_fun, R = 10000)
+
+ggplot()+
+  aes(boot_10k$t)+
+  geom_histogram()
+
+# want to look for convergence at a point that's valuable to you
+# point is to be able to calculate stats based on this that's more robust
+# e.g. confidence interval
+
+boot.ci(boot_10k, conf = 0.95)
+# give you 4 different types of confidence intervals
+# can bootstrap pretty much anything except minima and maxima
+# standard error is also very common
+```
+
+### Evaluating missingness with naniar
+
+```{r}
+
+vis_miss(airquality)
+# high level inital assessment
+
+gg_miss_var(airquality, facet = Month)
+# has functions that are built to work nicely with ggplot
+
+#geom_miss_point()
+
+ggplot(airquality,
+       aes(x = Ozone, 
+           y = Solar.R))+
+  geom_point()
+# regular scatter plot
+# remember that this uses listwise deletion (if either var is missing, that point doesnt exist anymore)
+# change to geom_miss_point()
+
+ggplot(airquality,
+       aes(x = Ozone,
+           y= Solar.R))+
+  geom_miss_point()
+# adds jitter (but not value of other variable, just puts them near that axis), colors them
+
+ggplot(airquality,
+       aes( x = Solar.R,
+            y = Temp))+
+  geom_miss_point()+
+  scale_color_manual( values = c("orange", "purple"))+
+  facet_wrap(~Month)
+
+#  useful for: is there a tendency to have a greater number of missings separated by another variable?
+
+# SHADOW MATRIX
+# data frame that contains info about whether or not an observation is NA
+
+na_shadow <- bind_shadow(airquality)
+
+# Imputation by linear regression
+# scary easy in R
+
+airquality %>% 
+  impute_lm(Ozone ~ Temp + Wind) %>% 
+  ggplot(aes(x= Temp, y = Ozone))+
+  geom_point()
+
+na_shadow %>% 
+  impute_lm(Ozone ~ Temp + Wind) %>% 
+  ggplot(aes( x = Temp, y = Ozone, color = Ozone_NA))+
+  geom_point()
+```
+
